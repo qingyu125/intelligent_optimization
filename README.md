@@ -18,4 +18,4 @@
 ### 消融实验  
 ![8](https://github.com/qingyu125/intelligent_optimization/blob/main/images/AMPSO%E6%B6%88%E8%9E%8D%E5%AE%9E%E9%AA%8C.png) ![9](https://github.com/qingyu125/intelligent_optimization/blob/main/images/HGSA%E6%B6%88%E8%9E%8D%E5%AE%9E%E9%AA%8C.png)
 ### 参数敏感性分析
-![10](https://github.com/qingyu125/intelligent_optimization/blob/main/images/AMPSO%E6%83%AF%E6%80%A7%E6%9D%83%E9%87%8D%E6%95%8F%E6%84%9F%E6%80%A7.png)![11](https://github.com/qingyu125/intelligent_optimization/blob/main/images/HGSA%E5%88%9D%E5%A7%8B%E6%B8%A9%E5%BA%A6%E6%95%8F%E6%84%9F%E6%80%A7.png)
+![10](https://github.com/qingyu125/intelligent_optimization/blob/main/images/AMPSO%E6%AD%A3%E4%BA%A4%E5%AE%9E%E9%AA%8C.png)![11](https://github.com/qingyu125/intelligent_optimization/blob/main/images/HGSA%E6%AD%A3%E4%BA%A4%E5%AE%9E%E9%AA%8C.png)
