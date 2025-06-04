@@ -320,7 +320,7 @@ def run_experiments():
     ]
     
     discrete_problems = [
-        KnapsackProblem(n_items=20, max_weight=50)
+        KnapsackProblem(n_items=20, max_weight=500)
     ]
     
     # 准备算法
