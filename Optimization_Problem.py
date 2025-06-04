@@ -40,12 +40,12 @@ class RastriginProblem(OptimizationProblem):
 
 # 离散优化问题 - 0-1背包问题
 class KnapsackProblem(OptimizationProblem):
-    def __init__(self, n_items: int = 20, max_weight: int = 50):
+    def __init__(self, n_items: int = 20, max_weight: int = 500):
         super().__init__(n_items, 0, 1, "Knapsack")
         self.max_weight = max_weight
         # 随机生成物品价值和重量
-        self.values = np.random.randint(1, 20, n_items)
-        self.weights = np.random.randint(1, 10, n_items)
+        self.values = np.random.randint(1, 100, n_items)
+        self.weights = np.random.randint(1, 100, n_items)
         
     def evaluate(self, x: np.ndarray) -> float:
         # 将连续值转换为二进制决策
