@@ -100,9 +100,9 @@ class ExperimentAnalyzer:
         
         return pd.DataFrame(results)
     
-    def parameter_sensitivity(self, algorithm_class, problem, 
-                              param_name: str, param_range: List) -> pd.DataFrame:
-        """参数敏感性分析"""
+    def orthogonal_experiment(self, algorithm_class, problem, param_ranges: dict, 
+                             orthogonal_array: np.ndarray) -> pd.DataFrame:
+        """正交实验设计：多参数敏感性分析"""
         results = []
         
         base_params = {
@@ -110,9 +110,19 @@ class ExperimentAnalyzer:
             'max_iter': 100
         }
         
-        for param_value in param_range:
+        param_names = list(param_ranges.keys())
+        levels = [len(param_ranges[name]) for name in param_names]
+        
+        # 确保正交表的列数与参数数量匹配
+        assert orthogonal_array.shape[1] == len(param_names), "正交表列数与参数数量不匹配"
+        
+        for run_idx, row in enumerate(orthogonal_array):
             test_params = base_params.copy()
-            test_params[param_name] = param_value
+            
+            # 根据正交表设置参数值
+            for i, param_name in enumerate(param_names):
+                level = row[i]
+                test_params[param_name] = param_ranges[param_name][level]
             
             algorithm = algorithm_class(**test_params)
             fitness_values = []
@@ -121,42 +131,98 @@ class ExperimentAnalyzer:
                 _, best_fitness = algorithm.optimize(problem)
                 fitness_values.append(best_fitness)
             
-            results.append({
-                f'{param_name}': param_value,
+            # 记录实验结果
+            result_entry = {f'{param_name}': test_params[param_name] for param_name in param_names}
+            result_entry.update({
+                'Run': run_idx + 1,
                 'Mean Fitness': np.mean(fitness_values),
                 'Std Fitness': np.std(fitness_values)
             })
+            results.append(result_entry)
         
         return pd.DataFrame(results)
     
-    def plot_parameter_sensitivity(self, results_df: pd.DataFrame, param_name: str, save_path: str = None):
-        """绘制参数敏感性分析结果并保存图片"""
-        # 将英文参数名映射为中文
-        param_name_map = {
-            'w_min': '惯性权重下限',
-            'initial_temp': '初始温度',
-            'crossover_rate': '交叉率',
-            'mutation_rate': '变异率'
-        }
-        chinese_param_name = param_name_map.get(param_name, param_name)
+    def analyze_orthogonal_results(self, results_df: pd.DataFrame, param_ranges: dict):
+        """分析正交实验结果，计算各参数的极差和贡献率"""
+        param_names = list(param_ranges.keys())
+        n_levels = len(next(iter(param_ranges.values())))  # 假设所有参数水平数相同
         
-        plt.figure(figsize=(10, 6))
-        plt.errorbar(
-            results_df[param_name], 
-            results_df['Mean Fitness'], 
-            yerr=results_df['Std Fitness'],
-            fmt='-o', capsize=5,
-            label='平均适应度 (±标准差)'
-        )
-        plt.xlabel(chinese_param_name, fontsize=12)
-        plt.ylabel('平均适应度值', fontsize=12)
-        plt.title(f'{chinese_param_name}参数敏感性分析', fontsize=14, pad=20)
-        plt.grid(True, linestyle='--', alpha=0.7)
-        plt.legend()
+        analysis_results = []
+        
+        for param_name in param_names:
+            # 计算每个水平下的平均适应度
+            level_means = []
+            for level in range(n_levels):
+                level_value = param_ranges[param_name][level]
+                level_data = results_df[results_df[param_name] == level_value]
+                level_mean = level_data['Mean Fitness'].mean()
+                level_means.append(level_mean)
+            
+            # 计算极差（最大值-最小值）
+            range_value = max(level_means) - min(level_means)
+            
+            # 计算该参数的贡献率（简化计算，实际应通过方差分析）
+            total_mean = results_df['Mean Fitness'].mean()
+            sst = sum((results_df['Mean Fitness'] - total_mean) ** 2)
+            
+            ss_param = 0
+            for level in range(n_levels):
+                level_value = param_ranges[param_name][level]
+                level_data = results_df[results_df[param_name] == level_value]
+                level_mean = level_data['Mean Fitness'].mean()
+                ss_param += len(level_data) * (level_mean - total_mean) ** 2
+            
+            contribution_rate = ss_param / sst * 100 if sst != 0 else 0
+            
+            analysis_results.append({
+                '参数': param_name,
+                '最优水平': param_ranges[param_name][np.argmin(level_means)],
+                '极差': range_value,
+                '贡献率(%)': contribution_rate,
+                '水平均值': level_means
+            })
+        
+        # 按贡献率排序
+        analysis_results = sorted(analysis_results, key=lambda x: x['贡献率(%)'], reverse=True)
+        
+        return pd.DataFrame(analysis_results)
+    
+    def plot_orthogonal_results(self, analysis_df: pd.DataFrame, param_ranges: dict, save_path: str = None):
+        """绘制正交实验结果分析图"""
+        plt.figure(figsize=(12, 6))
+        
+        n_params = len(analysis_df)
+        for i, row in analysis_df.iterrows():
+            param_name = row['参数']
+            level_means = row['水平均值']
+            x_pos = np.arange(len(level_means))
+            
+            # 将英文参数名映射为中文
+            param_name_map = {
+                'w_min': '惯性权重下限',
+                'w_max': '惯性权重上限',
+                'c1': '个体学习因子',
+                'c2': '社会学习因子',
+                'initial_temp': '初始温度',
+                'cooling_rate': '冷却率',
+                'crossover_rate': '交叉率',
+                'mutation_rate': '变异率'
+            }
+            chinese_param_name = param_name_map.get(param_name, param_name)
+            
+            plt.subplot(1, n_params, i+1)
+            plt.bar(x_pos, level_means, align='center', alpha=0.7)
+            plt.xticks(x_pos, param_ranges[param_name])
+            plt.xlabel(f'{chinese_param_name}水平')
+            plt.ylabel('平均适应度')
+            plt.title(f'{chinese_param_name}对性能的影响')
+            plt.grid(axis='y', linestyle='--', alpha=0.7)
+        
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
+    
 
     def plot_competitiveness(self, results_df: pd.DataFrame, save_path: str = None):
         """绘制竞争力测试结果对比图"""
@@ -308,25 +374,84 @@ def run_experiments():
     print(hgsa_ablation_results)
     analyzer.plot_ablation_study(hgsa_ablation_results, 'HGSA', save_path='HGSA消融实验.png')
     
-    # 3. 参数敏感性分析
-    print("\n===== 参数敏感性分析 =====")
-    # AMPSO惯性权重敏感性分析
-    print("\nAMPSO惯性权重衰减率敏感性分析:")
-    w_range = [0.2, 0.4, 0.6, 0.8, 1.0]  # 不同的w_min值
-    w_sensitivity_results = analyzer.parameter_sensitivity(
-        AMPSO, RastriginProblem(dim=10), 'w_min', w_range
-    )
-    print(w_sensitivity_results)
-    analyzer.plot_parameter_sensitivity(w_sensitivity_results, 'w_min', save_path='AMPSO惯性权重敏感性.png')
+    # 3. 参数敏感性分析（修改为正交实验设计）
+    print("\n===== 参数敏感性分析（正交实验） =====")
     
-    # HGSA初始温度敏感性分析
-    print("\nHGSA初始温度敏感性分析:")
-    temp_range = [10, 50, 100, 200, 500]
-    temp_sensitivity_results = analyzer.parameter_sensitivity(
-        HGSA, KnapsackProblem(n_items=20, max_weight=50), 'initial_temp', temp_range
+    # 3.1 AMPSO多参数正交实验
+    print("\nAMPSO参数敏感性正交实验:")
+    # 定义AMPSO参数及其水平
+    ampsso_param_ranges = {
+        'w_min': [0.2, 0.4, 0.6],  # 惯性权重下限
+        'w_max': [0.7, 0.8, 0.9],  # 惯性权重上限
+        'c1': [1.5, 2.0, 2.5],     # 个体学习因子
+        'c2': [1.5, 2.0, 2.5]      # 社会学习因子
+    }
+    
+    # 使用L9(3^4)正交表（3水平4因素）
+    ampsso_orthogonal_array = np.array([
+        [0, 0, 0, 0],  # 第1行：w_min=0.2, w_max=0.7, c1=1.5, c2=1.5
+        [0, 1, 1, 1],  # 第2行：w_min=0.2, w_max=0.8, c1=2.0, c2=2.0
+        [0, 2, 2, 2],  # 第3行：w_min=0.2, w_max=0.9, c1=2.5, c2=2.5
+        [1, 0, 1, 2],  # 第4行：w_min=0.4, w_max=0.7, c1=2.0, c2=2.5
+        [1, 1, 2, 0],  # 第5行：w_min=0.4, w_max=0.8, c1=2.5, c2=1.5
+        [1, 2, 0, 1],  # 第6行：w_min=0.4, w_max=0.9, c1=1.5, c2=2.0
+        [2, 0, 2, 1],  # 第7行：w_min=0.6, w_max=0.7, c1=2.5, c2=2.0
+        [2, 1, 0, 2],  # 第8行：w_min=0.6, w_max=0.8, c1=1.5, c2=2.5
+        [2, 2, 1, 0]   # 第9行：w_min=0.6, w_max=0.9, c1=2.0, c2=1.5
+    ])
+    
+    # 运行正交实验
+    ampsso_orthogonal_results = analyzer.orthogonal_experiment(
+        AMPSO, RastriginProblem(dim=10), ampsso_param_ranges, ampsso_orthogonal_array
     )
-    print(temp_sensitivity_results)
-    analyzer.plot_parameter_sensitivity(temp_sensitivity_results, 'initial_temp', save_path='HGSA初始温度敏感性.png')
+    print("\nAMPSO正交实验结果:")
+    print(ampsso_orthogonal_results)
+    
+    # 分析正交实验结果
+    ampsso_analysis = analyzer.analyze_orthogonal_results(ampsso_orthogonal_results, ampsso_param_ranges)
+    print("\nAMPSO正交实验分析结果:")
+    print(ampsso_analysis)
+    
+    # 可视化正交实验结果
+    analyzer.plot_orthogonal_results(ampsso_analysis, ampsso_param_ranges, save_path='AMPSO正交实验.png')
+    
+    # 3.2 HGSA多参数正交实验
+    print("\nHGSA参数敏感性正交实验:")
+    # 定义HGSA参数及其水平
+    hgsa_param_ranges = {
+        'crossover_rate': [0.6, 0.7, 0.8],  # 交叉率
+        'mutation_rate': [0.05, 0.1, 0.15],  # 变异率
+        'initial_temp': [50, 100, 200],     # 初始温度
+        'cooling_rate': [0.9, 0.95, 0.99]   # 冷却率
+    }
+    
+    # 使用L9(3^4)正交表
+    hgsa_orthogonal_array = np.array([
+        [0, 0, 0, 0],  # 第1行
+        [0, 1, 1, 1],  # 第2行
+        [0, 2, 2, 2],  # 第3行
+        [1, 0, 1, 2],  # 第4行
+        [1, 1, 2, 0],  # 第5行
+        [1, 2, 0, 1],  # 第6行
+        [2, 0, 2, 1],  # 第7行
+        [2, 1, 0, 2],  # 第8行
+        [2, 2, 1, 0]   # 第9行
+    ])
+    
+    # 运行正交实验
+    hgsa_orthogonal_results = analyzer.orthogonal_experiment(
+        HGSA, KnapsackProblem(n_items=20, max_weight=50), hgsa_param_ranges, hgsa_orthogonal_array
+    )
+    print("\nHGSA正交实验结果:")
+    print(hgsa_orthogonal_results)
+    
+    # 分析正交实验结果
+    hgsa_analysis = analyzer.analyze_orthogonal_results(hgsa_orthogonal_results, hgsa_param_ranges)
+    print("\nHGSA正交实验分析结果:")
+    print(hgsa_analysis)
+    
+    # 可视化正交实验结果
+    analyzer.plot_orthogonal_results(hgsa_analysis, hgsa_param_ranges, save_path='HGSA正交实验.png')
 
 if __name__ == "__main__":
     run_experiments()    
